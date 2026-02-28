@@ -11,10 +11,8 @@
     header span { font-size:11px; color:#818384; }
     main { padding:16px; display:flex; flex-direction:column; gap:16px; }
     .field label { display:block; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#818384; margin-bottom:6px; }
-    .field input, .field select { width:100%; background:#272729; border:1px solid #343536; border-radius:4px; color:#d7dadc; font-size:13px; padding:8px 10px; outline:none; }
-    .field input:focus, .field select:focus { border-color:#ff4500; }
-    .hint { font-size:11px; color:#818384; margin-top:4px; }
-    .hint a { color:#ff4500; text-decoration:none; }
+    .field select { width:100%; background:#272729; border:1px solid #343536; border-radius:4px; color:#d7dadc; font-size:13px; padding:8px 10px; outline:none; }
+    .field select:focus { border-color:#ff4500; }
     button#save { width:100%; background:#ff4500; border:none; border-radius:4px; color:#fff; font-size:14px; font-weight:700; padding:10px; cursor:pointer; transition:background .15s; }
     button#save:hover { background:#e03d00; }
     #status { text-align:center; font-size:12px; min-height:16px; }
@@ -24,11 +22,6 @@
 <body>
   <header><h1>Glot</h1><span>Reddit 번역 익스텐션</span></header>
   <main>
-    <div class="field">
-      <label>Gemini API Key</label>
-      <input type="password" id="apiKey" placeholder="AIza..." autocomplete="off">
-      <p class="hint"><a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a>에서 무료 발급</p>
-    </div>
     <div class="field">
       <label>번역 언어</label>
       <select id="targetLang">
@@ -41,7 +34,7 @@
     <button id="save">저장</button>
     <div id="status"></div>
   </main>
-  <footer>텍스트 드래그 또는 댓글의 Glot 버튼으로 번역</footer>
+  <footer>게시글·댓글 클릭으로 번역</footer>
   <script src="popup.js"></script>
 </body>
 </html>

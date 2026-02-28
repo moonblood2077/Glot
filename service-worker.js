@@ -1,60 +1,85 @@
-const GEMINI_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+/**
+ * Glot! — Extension Service Worker
+ * 번역 요청을 Cloudflare Worker로 프록시합니다.
+ * Gemini API 키는 Cloudflare Worker 환경변수로 관리됩니다.
+ */
 
-const LANG_MAP = { ko: '한국어', en: '영어', ja: '일본어', zh: '중국어(간체)' };
+const WORKER_URL = 'https://glot-api.moonblood2077.workers.dev/translate';
 
+// ── 인메모리 캐시 (세션 내 중복 API 호출 방지) ────────────────────────────
+const MAX_CACHE = 60;
+const cache = new Map();   // key → 번역 결과 문자열 (LRU)
+const pending = new Map(); // key → Promise<string> (진행 중 중복 요청 공유)
+
+function cacheKey(text, lang) {
+  return `${lang}:${text}`;
+}
+
+function cacheGet(key) {
+  if (!cache.has(key)) return null;
+  // LRU: 접근 시 맨 뒤로 재삽입
+  const val = cache.get(key);
+  cache.delete(key);
+  cache.set(key, val);
+  return val;
+}
+
+function cacheSet(key, value) {
+  if (cache.size >= MAX_CACHE) {
+    cache.delete(cache.keys().next().value); // 가장 오래된 항목 제거
+  }
+  cache.set(key, value);
+}
+
+// ── Message Handler ────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'TRANSLATE') {
     handleTranslation(message.text, message.targetLanguage)
       .then(translation => sendResponse({ success: true, translation }))
       .catch(err => sendResponse({ success: false, error: err.message }));
-    return true;
+    return true; // async sendResponse 유지
   }
 });
 
 async function handleTranslation(text, targetLanguage = 'ko') {
-  const { geminiApiKey } = await chrome.storage.sync.get('geminiApiKey');
+  const key = cacheKey(text, targetLanguage);
 
-  console.log('[Glot SW] API Key 존재 여부:', !!geminiApiKey);
+  // 1) 인메모리 LRU 캐시 히트
+  const cached = cacheGet(key);
+  if (cached) {
+    console.log('[Glot SW] 메모리 캐시 히트 ✓');
+    return cached;
+  }
 
-  if (!geminiApiKey) throw new Error('API Key가 설정되지 않았습니다. 팝업에서 설정해주세요.');
+  // 2) 동일 요청이 이미 진행 중 → Promise 공유 (API 중복 호출 방지)
+  if (pending.has(key)) {
+    console.log('[Glot SW] 중복 요청 대기 공유...');
+    return pending.get(key);
+  }
 
-  const truncated = text.length > 3000 ? text.substring(0, 3000) : text;
-  const langName = LANG_MAP[targetLanguage] || '한국어';
+  // 3) 새 API 요청
+  console.log('[Glot SW] API 요청 →', targetLanguage, '/ 길이:', text.length);
 
-  console.log('[Glot SW] 번역 요청 시작 →', targetLanguage, '/ 텍스트 길이:', truncated.length);
-
-  const res = await fetch(GEMINI_ENDPOINT, {
+  const promise = fetch(WORKER_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiApiKey },
-    body: JSON.stringify({
-      system_instruction: {
-        parts: [{ text: `당신은 전문 번역가입니다. 주어진 텍스트를 ${langName}로 번역하세요.\n규칙:\n- 마크다운 보존\n- u/유저명, r/서브레딧, URL은 번역하지 마세요\n- 번역문만 출력하세요` }]
-      },
-      contents: [{ role: 'user', parts: [{ text: truncated }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 2048 }
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, targetLanguage }),
+  })
+    .then(async res => {
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `서버 오류 (${res.status})`);
+      }
+      const data = await res.json();
+      if (!data.translation) throw new Error('번역 결과를 받지 못했습니다.');
+      console.log('[Glot SW]', data.fromCache ? 'KV 캐시 히트 ✓' : 'Gemini 호출 완료');
+      cacheSet(key, data.translation);
+      return data.translation;
     })
-  });
+    .finally(() => {
+      pending.delete(key);
+    });
 
-  console.log('[Glot SW] HTTP 상태:', res.status);
-
-  if (!res.ok) {
-    const body = await res.text();
-    console.error('[Glot SW] 에러 응답 전문:', body);
-    const s = res.status;
-    if (s === 400) throw new Error(`요청 오류 (400): ${body.substring(0, 200)}`);
-    if (s === 401 || s === 403) throw new Error(`API Key 오류 (${s}): ${body.substring(0, 200)}`);
-    if (s === 429) throw new Error('요청 한도 초과. 잠시 후 다시 시도해주세요.');
-    throw new Error(`Gemini 오류 (${s}): ${body.substring(0, 200)}`);
-  }
-
-  const data = await res.json();
-  console.log('[Glot SW] 응답 수신 완료');
-
-  if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
-    console.error('[Glot SW] 예상치 못한 응답 구조:', JSON.stringify(data));
-    throw new Error('번역 결과를 받지 못했습니다.');
-  }
-
-  return data.candidates[0].content.parts[0].text.trim();
+  pending.set(key, promise);
+  return promise;
 }

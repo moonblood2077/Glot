@@ -1,0 +1,10 @@
+name = "glot-api"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[[kv_namespaces]]
+binding = "TRANSLATION_CACHE"
+id = "966e8fa542514b338cc8ca68e7123aee"
+
+# GEMINI_API_KEY는 평문 저장 금지 → Dashboard에서 Secret으로 등록
+# wrangler secret put GEMINI_API_KEY
