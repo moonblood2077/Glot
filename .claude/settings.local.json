@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:news.ycombinator.com)",
+      "WebFetch(domain:discuss.privacyguides.net)",
+      "WebFetch(domain:chrome-stats.com)",
+      "WebFetch(domain:chromewebstore.google.com)"
+    ]
+  }
+}
