@@ -3,16 +3,17 @@
   if (window.__glotLoaded) return;
   window.__glotLoaded = true;
 
-  let settings = { targetLanguage: 'ko' };
+  const DEFAULT_SHORTCUT = { altKey: true, ctrlKey: false, shiftKey: false, key: 'T' };
+  let settings = { targetLanguage: 'ko', writeShortcut: null };
   let tooltipEl = null;
   let spinnerEl = null;
 
   // ── DOM 헬스체크 ──────────────────────────────────────────────────────────
-  function showDomWarningToast(msg) {
-    const prev = document.getElementById('glot-dom-warning');
+  function showToast(id, msg, duration = 8000) {
+    const prev = document.getElementById(id);
     if (prev) prev.remove();
     const toast = document.createElement('div');
-    toast.id = 'glot-dom-warning';
+    toast.id = id;
     toast.textContent = msg;
     toast.style.cssText = [
       'position:fixed', 'bottom:20px', 'right:20px', 'z-index:2147483647',
@@ -23,8 +24,10 @@
     ].join(';');
     toast.onclick = () => toast.remove();
     document.body.appendChild(toast);
-    setTimeout(() => toast?.remove(), 10000);
+    setTimeout(() => toast?.remove(), duration);
   }
+
+  function showDomWarningToast(msg) { showToast('glot-dom-warning', msg, 10000); }
 
   function domHealthCheck() {
     // 포스트/댓글 페이지에서만 체크 (홈·서브레딧 목록 등 제외)
@@ -75,7 +78,7 @@
 
   // ── Init ──────────────────────────────────────────────────────────────────
   async function init() {
-    settings = await chrome.storage.sync.get({ targetLanguage: 'ko' });
+    settings = await chrome.storage.sync.get({ targetLanguage: 'ko', writeShortcut: null });
     injectStyles();
     setupClickToTranslate();
     setupWriteTranslate();
@@ -84,6 +87,7 @@
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'sync') return;
       if (changes.targetLanguage) settings.targetLanguage = changes.targetLanguage.newValue;
+      if (changes.writeShortcut)  settings.writeShortcut  = changes.writeShortcut.newValue;
     });
     // 5초 모니터 (콘솔용) + 30분 토스트 경고 (유저 알림용)
     setupDomMonitor();
@@ -294,8 +298,11 @@
     const tip = getOrCreateTooltip();
     const W = 480;
     const left = Math.max(8, Math.min(clientX - W / 2, window.innerWidth - W - 8));
-    const top = clientY - 8;
-    tip.style.cssText = `left:${left}px;top:${top}px;transform:translateY(-100%);`;
+    // 화면 상단 280px 이내면 아래로 flip (위로 올라가면 잘림 방지)
+    const showAbove = clientY > 280;
+    const top = showAbove ? clientY - 8 : clientY + 12;
+    const transform = showAbove ? 'translateY(-100%)' : 'translateY(0)';
+    tip.style.cssText = `left:${left}px;top:${top}px;transform:${transform};`;
     tip.querySelector('.glot-loading').hidden = false;
     tip.querySelector('.glot-result').hidden = true;
     tip.querySelector('.glot-error').hidden = true;
@@ -367,11 +374,18 @@
     });
   }
 
-  // ── Write Translate (역방향 번역: Alt + T / Mac: Option + T) ─────────────────
+  // ── Write Translate (역방향 번역: 커스터마이징 가능, 기본 Alt + T) ────────────
+  function matchesWriteShortcut(e) {
+    const s = settings.writeShortcut || DEFAULT_SHORTCUT;
+    return e.altKey   === !!s.altKey
+        && e.ctrlKey  === !!s.ctrlKey
+        && e.shiftKey === !!s.shiftKey
+        && e.key.toLowerCase() === (s.key || 'T').toLowerCase();
+  }
+
   function setupWriteTranslate() {
     document.addEventListener('keydown', async (e) => {
-      // Alt + T 단축키만 반응
-      if (!(e.altKey && (e.key === 't' || e.key === 'T'))) return;
+      if (!matchesWriteShortcut(e)) return;
 
       const editor = e.target.closest('[contenteditable="true"], textarea');
       if (!editor) return;
@@ -403,6 +417,7 @@
         }
       } catch (err) {
         console.error('[Glot] 역방향 번역 에러:', err);
+        showToast('glot-write-error', '⚠️ Glot!: ' + err.message, 5000);
       } finally {
         resetCursor();
       }

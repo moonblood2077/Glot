@@ -58,7 +58,8 @@
     }
 
     .field select,
-    .field input[type="password"] {
+    .field input[type="password"],
+    .field input[type="text"] {
       width: 100%;
       background: #272729;
       border: 1px solid #343536;
@@ -71,6 +72,17 @@
       -webkit-appearance: none;
       appearance: none;
     }
+    /* 단축키 캡처 인풋 */
+    #shortcutInput {
+      cursor: pointer;
+      caret-color: transparent;
+      letter-spacing: 0.03em;
+    }
+    #shortcutInput.recording {
+      border-color: rgba(255, 69, 0, 0.6);
+      box-shadow: 0 0 0 3px rgba(255, 69, 0, 0.12);
+      color: #818384;
+    }
     /* 드롭다운 옵션 배경·글자색 강제 지정 */
     .field select option {
       background-color: #272729;
@@ -78,7 +90,8 @@
     }
     .field select { cursor: pointer; }
     .field select:focus,
-    .field input[type="password"]:focus {
+    .field input[type="password"]:focus,
+    .field input[type="text"]:focus {
       border-color: rgba(255, 69, 0, 0.6);
       box-shadow: 0 0 0 3px rgba(255, 69, 0, 0.12);
     }
@@ -219,12 +232,18 @@
       <span class="field-hint">🔒 Your key is stored ONLY in your local browser and never shared.</span>
     </div>
 
+    <div class="field">
+      <label>Write Translate Shortcut</label>
+      <input type="text" id="shortcutInput" readonly placeholder="Click to record a shortcut..." />
+      <span class="field-hint">Click the field → press your key combo → save. Avoid browser shortcuts (e.g., Alt + ← / →).</span>
+    </div>
+
     <button id="save">Save Settings</button>
     <div id="status">✓ Saved!</div>
 
     <div class="guide-box">
       <p>📖 Read: Hover over text to read in <span class="guide-lang" id="guideLang">Korean</span>.</p>
-      <p>✍️ Write: Type in <span class="guide-lang" id="guideLang2">Korean</span> and press <kbd>Alt + T</kbd> to translate to English.</p>
+      <p>✍️ Write: Type in <span class="guide-lang" id="guideLang2">Korean</span> and press <kbd id="guideShortcut">Alt + T</kbd> to translate to English.</p>
     </div>
   </main>
 

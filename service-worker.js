@@ -7,7 +7,7 @@
 const WORKER_URL   = 'https://glot-api.moonblood2077.workers.dev/translate';
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
-// ── 인메모리 LRU 캐시 ─────────────────────────────────────────────────────────
+// ── L1: 인메모리 LRU 캐시 (빠름, SW 슬립 시 소멸) ────────────────────────────
 const MAX_CACHE = 60;
 const cache  = new Map();  // key → 번역 결과 문자열
 const pending = new Map(); // key → Promise<string>
@@ -25,6 +25,20 @@ function cacheGet(key) {
 function cacheSet(key, value) {
   if (cache.size >= MAX_CACHE) cache.delete(cache.keys().next().value);
   cache.set(key, value);
+}
+
+// ── L2: chrome.storage.session 캐시 (SW 슬립 후에도 브라우저 세션 내 유지) ──
+const S_ = 'g:'; // namespace prefix
+
+async function sessionGet(key) {
+  try {
+    const r = await chrome.storage.session.get(S_ + key);
+    return r[S_ + key] ?? null;
+  } catch { return null; }
+}
+
+function sessionSet(key, value) {
+  chrome.storage.session.set({ [S_ + key]: value }).catch(() => {});
 }
 
 // ── Auto-Toggle 프롬프트 생성 ──────────────────────────────────────────────────
@@ -45,10 +59,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleTranslation(text, targetLanguage = 'ko') {
   const key = cacheKey(text, targetLanguage);
 
-  // 1) 인메모리 LRU 캐시 히트
+  // 1) L1 인메모리 LRU 캐시
   const cached = cacheGet(key);
   if (cached) {
-    console.log('[Glot SW] 메모리 캐시 히트 ✓');
+    console.log('[Glot SW] L1 캐시 히트 ✓');
     return cached;
   }
 
@@ -58,7 +72,15 @@ async function handleTranslation(text, targetLanguage = 'ko') {
     return pending.get(key);
   }
 
-  // 3) storage에서 설정 읽기 (stateless: 매번 최신 값 사용)
+  // 3) L2 세션 캐시 (SW 슬립 후 재시작해도 유지)
+  const sessCached = await sessionGet(key);
+  if (sessCached) {
+    console.log('[Glot SW] L2 세션 캐시 히트 ✓');
+    cacheSet(key, sessCached); // L1 웜업
+    return sessCached;
+  }
+
+  // 4) storage에서 설정 읽기 (stateless: 매번 최신 값 사용)
   const { geminiApiKey } = await chrome.storage.sync.get({ geminiApiKey: '' });
 
   let promise;
@@ -72,7 +94,8 @@ async function handleTranslation(text, targetLanguage = 'ko') {
 
   promise = promise
     .then(translation => {
-      cacheSet(key, translation);
+      cacheSet(key, translation);    // L1
+      sessionSet(key, translation);  // L2
       return translation;
     })
     .finally(() => {
