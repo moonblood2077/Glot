@@ -8,7 +8,8 @@
     "https://www.reddit.com/*",
     "https://reddit.com/*",
     "https://sh.reddit.com/*",
-    "https://*.workers.dev/*"
+    "https://*.workers.dev/*",
+    "https://generativelanguage.googleapis.com/*"
   ],
   "background": { "service_worker": "service-worker.js" },
   "content_scripts": [{

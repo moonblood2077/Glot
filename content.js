@@ -12,6 +12,7 @@
     settings = await chrome.storage.sync.get({ targetLanguage: 'ko' });
     injectStyles();
     setupClickToTranslate();
+    setupWriteTranslate();
     setupScrollToClose();
     setupSPANavigation();
     chrome.storage.onChanged.addListener((changes, area) => {
@@ -296,11 +297,53 @@
     });
   }
 
+  // ── Write Translate (역방향 번역: Alt + T / Mac: Option + T) ─────────────────
+  function setupWriteTranslate() {
+    document.addEventListener('keydown', async (e) => {
+      // Alt + T 단축키만 반응
+      if (!(e.altKey && (e.key === 't' || e.key === 'T'))) return;
+
+      const editor = e.target.closest('[contenteditable="true"], textarea');
+      if (!editor) return;
+
+      // 브라우저 기본 동작 및 다른 핸들러 간섭 완벽 차단
+      e.preventDefault();
+      e.stopPropagation();
+
+      const selectedText = window.getSelection().toString().trim();
+      const textToTranslate = selectedText || editor.innerText?.trim() || editor.value?.trim() || '';
+      if (!textToTranslate) return;
+
+      // 스피너 (에디터 포커스 유지한 채 위치만 계산)
+      const rect = editor.getBoundingClientRect();
+      setLoadingCursor(rect.left + rect.width / 2, rect.top + rect.height / 2);
+
+      try {
+        const res = await chrome.runtime.sendMessage({
+          type: 'TRANSLATE',
+          text: textToTranslate,
+          targetLanguage: settings.targetLanguage || 'ko',
+        });
+
+        if (res && res.success) {
+          // 안전한 삽입 시퀀스: focus → selectAll → insertText
+          editor.focus();
+          document.execCommand('selectAll', false, null);
+          document.execCommand('insertText', false, res.translation);
+        }
+      } catch (err) {
+        console.error('[Glot] 역방향 번역 에러:', err);
+      } finally {
+        resetCursor();
+      }
+    }, { capture: true });
+  }
+
   // ── Auto-close on scroll ──────────────────────────────────────────────────
   function setupScrollToClose() {
     window.addEventListener('scroll', e => {
       if (!tooltipEl || tooltipEl.hidden) return;
-      if (tooltipEl.contains(e.target)) return; 
+      if (tooltipEl.contains(e.target)) return;
       hideTooltip();
     }, { passive: true, capture: true });
   }

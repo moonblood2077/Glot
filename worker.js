@@ -12,10 +12,21 @@ const GEMINI_ENDPOINT =
   'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 const LANG_MAP = {
-  ko: '한국어',
-  en: '영어',
-  ja: '일본어',
-  zh: '중국어(간체)',
+  ko: 'Korean',
+  en: 'English',
+  ja: 'Japanese',
+  zh: 'Chinese (Simplified)',
+  'zh-TW': 'Chinese (Traditional)',
+  es: 'Spanish',
+  fr: 'French',
+  de: 'German',
+  pt: 'Portuguese',
+  it: 'Italian',
+  ru: 'Russian',
+  ar: 'Arabic',
+  hi: 'Hindi',
+  vi: 'Vietnamese',
+  th: 'Thai',
 };
 
 const CACHE_TTL_SECONDS = 7 * 24 * 60 * 60; // 7일
@@ -85,7 +96,7 @@ export default {
     }
 
     // ── Gemini API 호출 ───────────────────────────────────────────────────────
-    const langName = LANG_MAP[targetLanguage] || '한국어';
+    const langName = LANG_MAP[targetLanguage] || 'Korean';
 
     const geminiRes = await fetch(GEMINI_ENDPOINT, {
       method: 'POST',
@@ -96,11 +107,7 @@ export default {
       body: JSON.stringify({
         system_instruction: {
           parts: [{
-            text: `당신은 전문 번역가입니다. 주어진 텍스트를 ${langName}로 번역하세요.
-규칙:
-- 마크다운 보존
-- u/유저명, r/서브레딧, URL은 번역하지 마세요
-- 번역문만 출력하세요`,
+            text: `You are a professional translator. Translate the given text into ${langName}. IMPORTANT RULE: If the given text is ALREADY in ${langName} (or very similar), translate it into English instead. Output ONLY the translated text without any quotes, markdown formatting, or explanations.`,
           }],
         },
         contents: [{ role: 'user', parts: [{ text: truncated }] }],

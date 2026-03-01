@@ -1,37 +1,38 @@
 /**
  * Glot! — Extension Service Worker
- * 번역 요청을 Cloudflare Worker로 프록시합니다.
- * Gemini API 키는 Cloudflare Worker 환경변수로 관리됩니다.
+ * BYOK 라우터: geminiApiKey 있으면 직접 Gemini API, 없으면 Cloudflare Worker
+ * Auto-Toggle: 이미 목표 언어인 경우 자동으로 영어로 번역
  */
 
-const WORKER_URL = 'https://glot-api.moonblood2077.workers.dev/translate';
+const WORKER_URL   = 'https://glot-api.moonblood2077.workers.dev/translate';
+const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
-// ── 인메모리 캐시 (세션 내 중복 API 호출 방지) ────────────────────────────
+// ── 인메모리 LRU 캐시 ─────────────────────────────────────────────────────────
 const MAX_CACHE = 60;
-const cache = new Map();   // key → 번역 결과 문자열 (LRU)
-const pending = new Map(); // key → Promise<string> (진행 중 중복 요청 공유)
+const cache  = new Map();  // key → 번역 결과 문자열
+const pending = new Map(); // key → Promise<string>
 
-function cacheKey(text, lang) {
-  return `${lang}:${text}`;
-}
+function cacheKey(text, lang) { return `${lang}:${text}`; }
 
 function cacheGet(key) {
   if (!cache.has(key)) return null;
-  // LRU: 접근 시 맨 뒤로 재삽입
   const val = cache.get(key);
   cache.delete(key);
-  cache.set(key, val);
+  cache.set(key, val); // LRU: 맨 뒤로
   return val;
 }
 
 function cacheSet(key, value) {
-  if (cache.size >= MAX_CACHE) {
-    cache.delete(cache.keys().next().value); // 가장 오래된 항목 제거
-  }
+  if (cache.size >= MAX_CACHE) cache.delete(cache.keys().next().value);
   cache.set(key, value);
 }
 
-// ── Message Handler ────────────────────────────────────────────────────────
+// ── Auto-Toggle 프롬프트 생성 ──────────────────────────────────────────────────
+function buildSystemPrompt(targetLanguage) {
+  return `You are a professional translator. Translate the given text into ${targetLanguage}. IMPORTANT RULE: If the given text is ALREADY in ${targetLanguage} (or very similar), translate it into English instead. Output ONLY the translated text without any quotes, markdown formatting, or explanations.`;
+}
+
+// ── Message Handler ───────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'TRANSLATE') {
     handleTranslation(message.text, message.targetLanguage)
@@ -51,30 +52,28 @@ async function handleTranslation(text, targetLanguage = 'ko') {
     return cached;
   }
 
-  // 2) 동일 요청이 이미 진행 중 → Promise 공유 (API 중복 호출 방지)
+  // 2) 동일 요청이 이미 진행 중 → Promise 공유
   if (pending.has(key)) {
     console.log('[Glot SW] 중복 요청 대기 공유...');
     return pending.get(key);
   }
 
-  // 3) 새 API 요청
-  console.log('[Glot SW] API 요청 →', targetLanguage, '/ 길이:', text.length);
+  // 3) storage에서 설정 읽기 (stateless: 매번 최신 값 사용)
+  const { geminiApiKey } = await chrome.storage.sync.get({ geminiApiKey: '' });
 
-  const promise = fetch(WORKER_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, targetLanguage }),
-  })
-    .then(async res => {
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `서버 오류 (${res.status})`);
-      }
-      const data = await res.json();
-      if (!data.translation) throw new Error('번역 결과를 받지 못했습니다.');
-      console.log('[Glot SW]', data.fromCache ? 'KV 캐시 히트 ✓' : 'Gemini 호출 완료');
-      cacheSet(key, data.translation);
-      return data.translation;
+  let promise;
+  if (geminiApiKey) {
+    console.log('[Glot SW] BYOK 직접 Gemini 호출 →', targetLanguage);
+    promise = callGeminiDirect(text, targetLanguage, geminiApiKey);
+  } else {
+    console.log('[Glot SW] Cloudflare Worker 경유 →', targetLanguage);
+    promise = callCloudflareWorker(text, targetLanguage);
+  }
+
+  promise = promise
+    .then(translation => {
+      cacheSet(key, translation);
+      return translation;
     })
     .finally(() => {
       pending.delete(key);
@@ -82,4 +81,54 @@ async function handleTranslation(text, targetLanguage = 'ko') {
 
   pending.set(key, promise);
   return promise;
+}
+
+// ── BYOK: 직접 Gemini API 호출 ────────────────────────────────────────────────
+async function callGeminiDirect(text, targetLanguage, apiKey) {
+  const truncated = text.length > 3000 ? text.substring(0, 3000) : text;
+
+  const res = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      system_instruction: {
+        parts: [{ text: buildSystemPrompt(targetLanguage) }],
+      },
+      contents: [{ role: 'user', parts: [{ text: truncated }] }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error('[Glot SW] Gemini 직접 호출 오류:', res.status, errText);
+    if (res.status === 429) throw new Error('API 요청 한도 초과. 잠시 후 다시 시도하세요.');
+    if (res.status === 400) throw new Error('API 키가 올바르지 않습니다. 팝업에서 확인해 주세요.');
+    throw new Error(`Gemini 오류 (${res.status})`);
+  }
+
+  const data = await res.json();
+  const translation = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  if (!translation) throw new Error('번역 결과를 받지 못했습니다.');
+  console.log('[Glot SW] BYOK Gemini 호출 완료 ✓');
+  return translation;
+}
+
+// ── Cloudflare Worker 경유 호출 ───────────────────────────────────────────────
+async function callCloudflareWorker(text, targetLanguage) {
+  const res = await fetch(WORKER_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, targetLanguage }),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `서버 오류 (${res.status})`);
+  }
+
+  const data = await res.json();
+  if (!data.translation) throw new Error('번역 결과를 받지 못했습니다.');
+  console.log('[Glot SW]', data.fromCache ? 'KV 캐시 히트 ✓' : 'Gemini 호출 완료');
+  return data.translation;
 }
