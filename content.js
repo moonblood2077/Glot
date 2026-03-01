@@ -7,6 +7,72 @@
   let tooltipEl = null;
   let spinnerEl = null;
 
+  // ── DOM 헬스체크 ──────────────────────────────────────────────────────────
+  function showDomWarningToast(msg) {
+    const prev = document.getElementById('glot-dom-warning');
+    if (prev) prev.remove();
+    const toast = document.createElement('div');
+    toast.id = 'glot-dom-warning';
+    toast.textContent = msg;
+    toast.style.cssText = [
+      'position:fixed', 'bottom:20px', 'right:20px', 'z-index:2147483647',
+      'background:#1a1a1b', 'border:1px solid #FF4500', 'color:#d7dadc',
+      'padding:10px 14px', 'border-radius:8px', 'font-size:13px',
+      'font-family:sans-serif', 'line-height:1.5', 'max-width:320px',
+      'box-shadow:0 4px 20px rgba(0,0,0,0.5)', 'cursor:pointer',
+    ].join(';');
+    toast.onclick = () => toast.remove();
+    document.body.appendChild(toast);
+    setTimeout(() => toast?.remove(), 10000);
+  }
+
+  function domHealthCheck() {
+    // 포스트/댓글 페이지에서만 체크 (홈·서브레딧 목록 등 제외)
+    if (!/\/r\/[^/]+\/comments\//.test(location.pathname)) return;
+
+    const checks = {
+      commentTree: !!document.querySelector('shreddit-comment-tree'),
+      comment:     !!document.querySelector('shreddit-comment[thingid]'),
+      postTitle:   !!document.querySelector('h1[slot="title"]'),
+      postBody:    !!document.querySelector('div[slot="text-body"]'),
+    };
+    const ok = Object.values(checks).some(Boolean);
+    if (!ok) {
+      console.warn('[Glot] ⚠️ 번역 셀렉터 전체 실패 — Reddit DOM 구조 변경 의심', checks);
+      showDomWarningToast('⚠️ Glot! 경고: Reddit 구조가 변경되어 번역이 동작하지 않을 수 있습니다. (클릭해서 닫기)');
+    }
+  }
+
+  // ── 5초 주기 DOM 모니터 (F12 콘솔 실시간 확인용) ──────────────────────────
+  function setupDomMonitor() {
+    let prevKey = null;
+
+    function check() {
+      const isPostPage = /\/r\/[^/]+\/comments\//.test(location.pathname);
+      const found = {
+        page:        isPostPage ? 'post' : 'other',
+        commentTree: !!document.querySelector('shreddit-comment-tree'),
+        comment:     !!document.querySelector('shreddit-comment[thingid]'),
+        postTitle:   !!document.querySelector('h1[slot="title"]'),
+        postBody:    !!document.querySelector('div[slot="text-body"]'),
+      };
+
+      const key = JSON.stringify(found);
+      if (key === prevKey) return; // 변화 없으면 스킵 (콘솔 노이즈 방지)
+      prevKey = key;
+
+      const ok = found.commentTree || found.comment || found.postTitle || found.postBody;
+      if (isPostPage && !ok) {
+        console.warn('[Glot Monitor] ⚠️ 포스트 페이지 — 번역 대상 셀렉터 없음 (DOM 변경 의심)', found);
+      } else {
+        console.log('[Glot Monitor]', ok ? '✓ 정상' : '— 비-포스트 페이지', found);
+      }
+    }
+
+    check();                   // 즉시 1회 (F12 열자마자 현재 상태 확인)
+    setInterval(check, 5000);  // 이후 5초마다 (변화 있을 때만 로그)
+  }
+
   // ── Init ──────────────────────────────────────────────────────────────────
   async function init() {
     settings = await chrome.storage.sync.get({ targetLanguage: 'ko' });
@@ -19,6 +85,10 @@
       if (area !== 'sync') return;
       if (changes.targetLanguage) settings.targetLanguage = changes.targetLanguage.newValue;
     });
+    // 5초 모니터 (콘솔용) + 30분 토스트 경고 (유저 알림용)
+    setupDomMonitor();
+    setTimeout(domHealthCheck, 5000);
+    setInterval(domHealthCheck, 30 * 60 * 1000);
   }
 
   // ── Cursor spinner (로딩 상태용) ──────────────────────────────────────────
