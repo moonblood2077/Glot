@@ -414,6 +414,9 @@
           editor.focus();
           document.execCommand('selectAll', false, null);
           document.execCommand('insertText', false, res.translation);
+        } else {
+          const msg = res?.error || '번역 실패. 잠시 후 다시 시도하세요.';
+          showToast('glot-write-error', '⚠️ Glot!: ' + msg, 5000);
         }
       } catch (err) {
         console.error('[Glot] 역방향 번역 에러:', err);
