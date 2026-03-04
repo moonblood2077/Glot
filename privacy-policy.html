@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Glot! — Privacy Policy</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 720px; margin: 60px auto; padding: 0 24px; color: #1a1a1b; line-height: 1.7; }
+    h1 { font-size: 28px; margin-bottom: 4px; }
+    h2 { font-size: 18px; margin-top: 40px; color: #FF4500; }
+    .updated { color: #818384; font-size: 13px; margin-bottom: 40px; }
+    a { color: #FF4500; }
+  </style>
+</head>
+<body>
+  <h1>Glot! Privacy Policy</h1>
+  <p class="updated">Last updated: March 2, 2026</p>
+
+  <p>Glot! is a Chrome extension that translates text on Reddit using Google Gemini AI. This policy explains what data we collect and how we use it.</p>
+
+  <h2>Data We Collect</h2>
+  <p>Glot! collects no personal data. The only information stored is:</p>
+  <ul>
+    <li><strong>Your settings</strong> (target language, optional API key, keyboard shortcut) — stored locally in your browser via <code>chrome.storage.sync</code>. This data is synced across your Chrome devices by Google if you are signed in to Chrome, but is never sent to us.</li>
+    <li><strong>Selected text</strong> — the text you choose to translate is sent to Google Gemini AI for processing. It is not stored by Glot! after translation.</li>
+  </ul>
+
+  <h2>Your Gemini API Key (Optional)</h2>
+  <p>If you provide a personal Gemini API key (BYOK), it is stored <strong>only in your local browser</strong> (<code>chrome.storage.sync</code>) and is sent directly to Google's API. It is never transmitted to any Glot! server.</p>
+
+  <h2>Third-Party Services</h2>
+  <ul>
+    <li><strong>Google Gemini AI</strong> — text you translate is processed by Google. See <a href="https://policies.google.com/privacy" target="_blank">Google's Privacy Policy</a>.</li>
+    <li><strong>Cloudflare Workers</strong> — when no personal API key is set, translation requests are routed through our Cloudflare Worker proxy. Translated text is cached briefly (up to 7 days) to reduce API costs. No personally identifiable information is attached to these requests.</li>
+  </ul>
+
+  <h2>Data Sharing</h2>
+  <p>We do not sell, share, or transfer any user data to third parties beyond what is described above.</p>
+
+  <h2>Data Retention</h2>
+  <p>Glot! stores no data on its own servers. Local browser storage is controlled entirely by you and can be cleared at any time.</p>
+
+  <h2>Children's Privacy</h2>
+  <p>Glot! is not directed at children under 13. We do not knowingly collect data from children.</p>
+
+  <h2>Changes to This Policy</h2>
+  <p>We may update this policy occasionally. The "Last updated" date at the top reflects the most recent revision.</p>
+
+  <h2>Contact</h2>
+  <p>Questions? Open an issue on <a href="https://github.com/moonblood2077/Glot" target="_blank">GitHub</a>.</p>
+</body>
+</html>
