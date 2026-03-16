@@ -1,15 +1,17 @@
 {
   "manifest_version": 3,
-  "name": "Glot",
-  "version": "1.0.0",
-  "description": "Reddit 실시간 번역 익스텐션 (Gemini AI)",
-  "permissions": ["storage", "scripting"],
+  "name": "Glot!",
+  "short_name": "Glot!",
+  "version": "1.0.4",
+  "description": "Instantly translate Reddit — click to read, type to write. Powered by Gemini AI.",
+  "permissions": ["storage"],
   "host_permissions": [
     "https://www.reddit.com/*",
     "https://reddit.com/*",
     "https://sh.reddit.com/*",
     "https://*.workers.dev/*",
-    "https://generativelanguage.googleapis.com/*"
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.lemonsqueezy.com/*"
   ],
   "background": { "service_worker": "service-worker.js" },
   "content_scripts": [{

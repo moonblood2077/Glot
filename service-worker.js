@@ -6,6 +6,7 @@
 
 const WORKER_URL   = 'https://glot-api.moonblood2077.workers.dev/translate';
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+const FREE_DAILY_LIMIT = 10;
 
 // ── L1: 인메모리 LRU 캐시 (빠름, SW 슬립 시 소멸) ────────────────────────────
 const MAX_CACHE = 60;
@@ -39,6 +40,15 @@ async function sessionGet(key) {
 
 function sessionSet(key, value) {
   chrome.storage.session.set({ [S_ + key]: value }).catch(() => {});
+}
+
+// ── 무료 일일 사용량 관리 ──────────────────────────────────────────────────────
+async function checkAndIncrementDaily() {
+  const today = new Date().toISOString().slice(0, 10);
+  const { glotDate, glotCount = 0 } = await chrome.storage.local.get(['glotDate', 'glotCount']);
+  const count = glotDate === today ? glotCount : 0;
+  if (count >= FREE_DAILY_LIMIT) throw new Error('DAILY_LIMIT_REACHED');
+  await chrome.storage.local.set({ glotDate: today, glotCount: count + 1 });
 }
 
 // ── Auto-Toggle 프롬프트 생성 ──────────────────────────────────────────────────
@@ -81,14 +91,22 @@ async function handleTranslation(text, targetLanguage = 'ko') {
   }
 
   // 4) storage에서 설정 읽기 (stateless: 매번 최신 값 사용)
-  const { geminiApiKey } = await chrome.storage.sync.get({ geminiApiKey: '' });
+  const { geminiApiKey, licenseKey, licenseValid } = await chrome.storage.sync.get({
+    geminiApiKey: '', licenseKey: '', licenseValid: false,
+  });
+
+  const isPro = licenseValid && licenseKey;
 
   let promise;
   if (geminiApiKey) {
     console.log('[Glot SW] BYOK 직접 Gemini 호출 →', targetLanguage);
     promise = callGeminiDirect(text, targetLanguage, geminiApiKey);
+  } else if (isPro) {
+    console.log('[Glot SW] Pro 라이선스 → Cloudflare Worker (무제한) →', targetLanguage);
+    promise = callCloudflareWorker(text, targetLanguage);
   } else {
     console.log('[Glot SW] Cloudflare Worker 경유 →', targetLanguage);
+    await checkAndIncrementDaily();
     promise = callCloudflareWorker(text, targetLanguage);
   }
 
@@ -108,7 +126,7 @@ async function handleTranslation(text, targetLanguage = 'ko') {
 
 // ── BYOK: 직접 Gemini API 호출 ────────────────────────────────────────────────
 async function callGeminiDirect(text, targetLanguage, apiKey) {
-  const truncated = text.length > 3000 ? text.substring(0, 3000) : text;
+  const truncated = text.length > 8000 ? text.substring(0, 8000) : text;
 
   const res = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
     method: 'POST',
@@ -118,7 +136,7 @@ async function callGeminiDirect(text, targetLanguage, apiKey) {
         parts: [{ text: buildSystemPrompt(targetLanguage) }],
       },
       contents: [{ role: 'user', parts: [{ text: truncated }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
+      generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
     }),
   });
 

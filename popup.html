@@ -233,6 +233,15 @@
     </div>
 
     <div class="field">
+      <label>Pro License Key <span style="color:#343536;font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+      <div style="position:relative">
+        <input type="password" id="licenseKey" placeholder="Enter your Glot! Pro license key" autocomplete="off" />
+        <span id="licenseStatus" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:700;"></span>
+      </div>
+      <span class="field-hint">🔑 One-time purchase → unlimited translations. <a href="https://glot-app.lemonsqueezy.com" target="_blank" style="color:#FF4500;text-decoration:none;">Get Pro →</a></span>
+    </div>
+
+    <div class="field">
       <label>Write Translate Shortcut</label>
       <input type="text" id="shortcutInput" readonly placeholder="Click to record a shortcut..." />
       <span class="field-hint">Click the field → press your key combo → save. Avoid browser shortcuts (e.g., Alt + ← / →).</span>
@@ -247,7 +256,7 @@
     </div>
   </main>
 
-  <footer>v1.0 · Powered by Gemini 2.5 Flash</footer>
+  <footer>v1.0.3 · Powered by Gemini 2.5 Flash</footer>
 
   <script src="popup.js"></script>
 </body>

@@ -232,13 +232,13 @@
 
       /* ── 번역 결과 ── */
       .glot-result {
-        color: #e5e7eb;
-        font-size: 14px;
-        line-height: 1.6;
-        white-space: pre-wrap;
-        word-break: break-word;
-        max-height: 400px;
-        overflow-y: auto;
+        color: #e5e7eb !important;
+        font-size: 14px !important;
+        line-height: 1.6 !important;
+        white-space: pre-wrap !important;
+        word-break: break-word !important;
+        max-height: 400px !important;
+        overflow-y: auto !important;
       }
       .glot-result::-webkit-scrollbar { width: 6px; }
       .glot-result::-webkit-scrollbar-track { background: transparent; }
@@ -269,7 +269,12 @@
       throw new Error('페이지를 새로고침해주세요. (익스텐션 재시작됨)');
     }
     if (!res) throw new Error('응답 없음. 페이지를 새로고침해주세요.');
-    if (!res.success) throw new Error(res.error || '번역 실패');
+    if (!res.success) {
+      if (res.error === 'DAILY_LIMIT_REACHED') {
+        throw new Error('오늘 무료 번역 10회를 모두 사용했습니다. 자정에 초기화됩니다.\n🔑 Glot! 아이콘 → API 키 입력 시 무제한 이용 가능');
+      }
+      throw new Error(res.error || '번역 실패');
+    }
     return res.translation;
   }
 
@@ -302,6 +307,13 @@
     const showAbove = clientY > 280;
     const top = showAbove ? clientY - 8 : clientY + 12;
     const transform = showAbove ? 'translateY(-100%)' : 'translateY(0)';
+    // 뷰포트 여유 공간에 맞춰 결과 영역 max-height 동적 계산 (스크롤바 항상 보이도록)
+    const headerH = 60;
+    const pad = 20;
+    const maxResultH = showAbove
+      ? Math.max(80, clientY - headerH - pad)          // 위로 표시: 클릭 위치 위쪽 공간
+      : Math.max(80, window.innerHeight - top - headerH - pad); // 아래로 표시: 아래쪽 공간
+    tip.querySelector('.glot-result').style.maxHeight = Math.min(400, maxResultH) + 'px';
     tip.style.cssText = `left:${left}px;top:${top}px;transform:${transform};`;
     tip.querySelector('.glot-loading').hidden = false;
     tip.querySelector('.glot-result').hidden = true;
@@ -394,8 +406,14 @@
       e.preventDefault();
       e.stopPropagation();
 
-      const selectedText = window.getSelection().toString().trim();
-      const textToTranslate = selectedText || editor.innerText?.trim() || editor.value?.trim() || '';
+      // 텍스트 추출: TEXTAREA는 .value, contenteditable은 textContent (선택 API 우회)
+      // selectAll은 삽입 직전에만 사용
+      let textToTranslate;
+      if (editor.tagName === 'TEXTAREA') {
+        textToTranslate = editor.value.trim();
+      } else {
+        textToTranslate = editor.textContent.trim();
+      }
       if (!textToTranslate) return;
 
       // 스피너 (에디터 포커스 유지한 채 위치만 계산)
@@ -410,13 +428,24 @@
         });
 
         if (res && res.success) {
-          // 안전한 삽입 시퀀스: focus → selectAll → insertText
           editor.focus();
           document.execCommand('selectAll', false, null);
-          document.execCommand('insertText', false, res.translation);
+          await new Promise(r => setTimeout(r, 0));
+          const inserted = document.execCommand('insertText', false, res.translation);
+          if (!inserted) {
+            editor.dispatchEvent(new InputEvent('beforeinput', {
+              inputType: 'insertText',
+              data: res.translation,
+              bubbles: true,
+              cancelable: true,
+            }));
+          }
         } else {
-          const msg = res?.error || '번역 실패. 잠시 후 다시 시도하세요.';
-          showToast('glot-write-error', '⚠️ Glot!: ' + msg, 5000);
+          const isLimit = res?.error === 'DAILY_LIMIT_REACHED';
+          const msg = isLimit
+            ? '오늘 무료 번역 10회를 모두 사용했습니다. 자정에 초기화됩니다.\n🔑 Glot! 아이콘 → API 키 입력 시 무제한 이용 가능'
+            : res?.error || '번역 실패. 잠시 후 다시 시도하세요.';
+          showToast('glot-write-error', '⚠️ Glot!: ' + msg, isLimit ? 10000 : 5000);
         }
       } catch (err) {
         console.error('[Glot] 역방향 번역 에러:', err);

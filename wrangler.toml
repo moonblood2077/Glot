@@ -2,9 +2,23 @@ name = "glot-api"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
+[placement]
+mode = "off"
+
 [[kv_namespaces]]
 binding = "TRANSLATION_CACHE"
 id = "966e8fa542514b338cc8ca68e7123aee"
 
+[ai]
+binding = "AI"
+
 # GEMINI_API_KEY는 평문 저장 금지 → Dashboard에서 Secret으로 등록
 # wrangler secret put GEMINI_API_KEY
+
+# [Cloudflare Observability 설정]
+# 이 설정은 Cloudflare Workers의 고급 모니터링 및 로깅 기능을 활성화합니다.
+# 1. 로그 인덱싱: 실시간 스트리밍뿐만 아니라 과거의 console.log 기록을 검색하고 필터링할 수 있게 합니다.
+# 2. 분석 대시보드: 요청 성공률, 오류율, 지연 시간(latency) 등을 시각화된 그래프로 제공합니다.
+# 3. 데이터 보존: 일정 기간 동안 로그 데이터를 보관하여 사후 분석(Post-mortem)을 가능하게 합니다.
+[observability]
+enabled = true

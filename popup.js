@@ -1,5 +1,7 @@
 const targetLangSelect = document.getElementById('targetLang');
 const apiKeyInput      = document.getElementById('apiKey');
+const licenseKeyInput  = document.getElementById('licenseKey');
+const licenseStatus    = document.getElementById('licenseStatus');
 const shortcutInput    = document.getElementById('shortcutInput');
 const saveBtn          = document.getElementById('save');
 const statusEl         = document.getElementById('status');
@@ -16,9 +18,10 @@ const LANG_NAMES = {
 };
 
 const DEFAULT_SHORTCUT = { altKey: true, ctrlKey: false, shiftKey: false, key: 'T' };
-let currentShortcut = { ...DEFAULT_SHORTCUT };
-let shortcutChanged  = false;
-let keyIsPlaceholder = false; // API key 마스킹 상태 추적
+let currentShortcut      = { ...DEFAULT_SHORTCUT };
+let shortcutChanged      = false;
+let keyIsPlaceholder     = false; // API key 마스킹 상태 추적
+let licenseIsPlaceholder = false; // License key 마스킹 상태 추적
 
 // ── 헬퍼 ──────────────────────────────────────────────────────────────────────
 function formatShortcut(s) {
@@ -44,18 +47,33 @@ function updateShortcutDisplay(s) {
 
 // ── 저장된 값 불러오기 ────────────────────────────────────────────────────────
 chrome.storage.sync.get(
-  { targetLanguage: 'ko', geminiApiKey: '', writeShortcut: null },
+  { targetLanguage: 'ko', geminiApiKey: '', writeShortcut: null, licenseKey: '', licenseValid: false },
   result => {
     targetLangSelect.value = result.targetLanguage || 'ko';
     if (result.geminiApiKey) {
       apiKeyInput.value = '••••••••••••••••';
       keyIsPlaceholder = true;
     }
+    if (result.licenseKey) {
+      licenseKeyInput.value = '••••••••••••••••';
+      licenseIsPlaceholder = true;
+      showLicenseStatus(result.licenseValid);
+    }
     currentShortcut = result.writeShortcut || DEFAULT_SHORTCUT;
     updateGuide(result.targetLanguage || 'ko');
     updateShortcutDisplay(currentShortcut);
   }
 );
+
+function showLicenseStatus(valid) {
+  if (valid) {
+    licenseStatus.textContent = '✓ Pro';
+    licenseStatus.style.color = '#46d160';
+  } else {
+    licenseStatus.textContent = '✗';
+    licenseStatus.style.color = '#ff585b';
+  }
+}
 
 // ── 언어 변경 → 가이드 업데이트 ──────────────────────────────────────────────
 targetLangSelect.addEventListener('change', () => {
@@ -67,6 +85,14 @@ apiKeyInput.addEventListener('focus', () => {
   if (keyIsPlaceholder) {
     apiKeyInput.value = '';
     keyIsPlaceholder = false;
+  }
+});
+
+// ── 라이선스 키 마스크 해제 ───────────────────────────────────────────────────
+licenseKeyInput.addEventListener('focus', () => {
+  if (licenseIsPlaceholder) {
+    licenseKeyInput.value = '';
+    licenseIsPlaceholder = false;
   }
 });
 
@@ -99,13 +125,47 @@ shortcutInput.addEventListener('blur', () => {
 });
 
 // ── 저장 ──────────────────────────────────────────────────────────────────────
-saveBtn.addEventListener('click', () => {
+saveBtn.addEventListener('click', async () => {
+  saveBtn.disabled = true;
   const updates = { targetLanguage: targetLangSelect.value };
-  if (!keyIsPlaceholder)  updates.geminiApiKey   = apiKeyInput.value.trim();
-  if (shortcutChanged)    updates.writeShortcut  = currentShortcut;
+  if (!keyIsPlaceholder)     updates.geminiApiKey  = apiKeyInput.value.trim();
+  if (shortcutChanged)       updates.writeShortcut = currentShortcut;
+
+  const newLicenseKey = licenseIsPlaceholder ? null : licenseKeyInput.value.trim();
+  if (newLicenseKey !== null) {
+    if (newLicenseKey === '') {
+      // 키 지움
+      updates.licenseKey   = '';
+      updates.licenseValid = false;
+      licenseStatus.textContent = '';
+    } else {
+      // 새 키 입력 → 검증
+      licenseStatus.textContent = '…';
+      licenseStatus.style.color = '#818384';
+      const valid = await validateLicense(newLicenseKey);
+      updates.licenseKey   = newLicenseKey;
+      updates.licenseValid = valid;
+      showLicenseStatus(valid);
+    }
+  }
 
   chrome.storage.sync.set(updates, () => {
+    saveBtn.disabled = false;
     statusEl.classList.add('visible');
     setTimeout(() => statusEl.classList.remove('visible'), 1800);
   });
 });
+
+async function validateLicense(key) {
+  try {
+    const res = await fetch('https://api.lemonsqueezy.com/v1/licenses/activate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ license_key: key, instance_name: 'Glot! Extension' }),
+    });
+    const data = await res.json();
+    return data.license_key?.status === 'active';
+  } catch {
+    return false;
+  }
+}

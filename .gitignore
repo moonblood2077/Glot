@@ -2,5 +2,6 @@
 *.env.*
 **/*.env
 node_modules/
-dist/"*.env" 
-"*.env.*" 
+dist/
+.wrangler/
+.DS_Store
