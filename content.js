@@ -467,14 +467,40 @@
 
   // ── SPA Navigation ────────────────────────────────────────────────────────
   function setupSPANavigation() {
+    // 현재 접속 중인 페이지의 URL 주소를 변수에 저장해 둡니다.
     let lastUrl = location.href;
+    
+    // 주소 변경이 감지되었을 때 우리가 실행할 동작을 정의한 함수입니다.
     function onNav() {
+      // 현재 주소가 직전 주소(lastUrl)와 완전히 똑같다면 더 이상 진행하지 않고 함수를 끝냅니다.
       if (location.href === lastUrl) return;
+      // 주소가 진짜로 바뀌었다면, 새로운 주소를 lastUrl 변수에 업데이트해 줍니다.
       lastUrl = location.href;
+      // 새로운 주소의 화면 요소(DOM)가 그려질 시간을 주기 위해 0.6초(600ms) 기다린 후 번역 스타일을 다시 주입합니다.
       setTimeout(() => { injectStyles(); }, 600);
     }
-    const orig = history.pushState.bind(history);
-    history.pushState = function (...args) { orig(...args); onNav(); };
+    
+    // 브라우저가 기본적으로 가지고 있는 history.pushState 함수(주소 추가)를 origPush 변수에 안전하게 보관해 둡니다.
+    const origPush = history.pushState.bind(history);
+    // pushState 함수를 우리가 만든 새로운 함수로 덮어씌워서 가로채기(Hooking)를 합니다.
+    history.pushState = function (...args) { 
+      // 기존에 보관해둔 진짜 pushState 함수를 먼저 실행하여 정상적으로 주소를 바꿉니다.
+      origPush(...args); 
+      // 주소가 바뀐 직후에 우리가 정의한 onNav 함수를 호출하여 필요한 작업(스타일 주입)을 수행하게 합니다.
+      onNav(); 
+    };
+
+    // 브라우저가 기본적으로 가지고 있는 history.replaceState 함수(주소 덮어쓰기)를 origReplace 변수에 안전하게 보관해 둡니다.
+    const origReplace = history.replaceState.bind(history);
+    // replaceState 함수도 우리가 만든 새로운 함수로 덮어씌워서 가로채기(Hooking)를 합니다.
+    history.replaceState = function (...args) { 
+      // 기존에 보관해둔 진짜 replaceState 함수를 먼저 실행하여 정상적으로 주소를 바꿉니다.
+      origReplace(...args); 
+      // 주소가 바뀐 직후에 우리가 정의한 onNav 함수를 호출합니다.
+      onNav(); 
+    };
+
+    // 사용자가 웹 브라우저의 '뒤로 가기'나 '앞으로 가기' 버튼을 눌렀을 때 발생하는 popstate 이벤트에도 onNav 함수를 연결해 줍니다.
     window.addEventListener('popstate', onNav);
   }
 

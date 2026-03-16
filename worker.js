@@ -61,6 +61,16 @@ async function sha256(str) {
 // ── 메인 핸들러 ───────────────────────────────────────────────────────────────
 export default {
   async fetch(request, env) {
+    // [백엔드 점검 모드 설정]
+    // 이 값을 true로 설정하면 모든 번역 요청 처리를 중지하고 점검 안내 메시지를 반환합니다.
+    const IS_MAINTENANCE_MODE = true;
+
+    // 만약 현재 시스템이 점검 중(true) 상태라면 아래의 로직을 실행합니다.
+    if (IS_MAINTENANCE_MODE) {
+      // 클라이언트에게 503(Service Unavailable) 상태 코드와 함께 안내 메시지를 JSON 형태로 반환합니다.
+      return jsonResponse({ error: 'Glot! 현재 기능 개선 및 안정성 업데이트 중입니다. 잠시 후 다시 시도해 주세요!' }, 503);
+    }
+
     // CORS preflight
     if (request.method === 'OPTIONS') return corsPreflightResponse();
 
