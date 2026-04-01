@@ -63,7 +63,7 @@ export default {
   async fetch(request, env) {
     // [백엔드 점검 모드 설정]
     // 이 값을 true로 설정하면 모든 번역 요청 처리를 중지하고 점검 안내 메시지를 반환합니다.
-    const IS_MAINTENANCE_MODE = true;
+    const IS_MAINTENANCE_MODE = env.MAINTENANCE_MODE === 'true'; // 운영 중 점검 시 true로 변경
 
     // 만약 현재 시스템이 점검 중(true) 상태라면 아래의 로직을 실행합니다.
     if (IS_MAINTENANCE_MODE) {
