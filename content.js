@@ -387,13 +387,87 @@
   }
 
   // ── Write Translate (역방향 번역: 커스터마이징 가능, 기본 Alt + T) ────────────
+  // 한글 IME 조합 중에는 e.key가 'Process'(keyCode 229)라서 e.key 비교가 실패한다.
+  // 물리 키(e.code)로 판별하고, code 없이 저장된 기존 설정은 key에서 유도한다.
+  function shortcutCode(s) {
+    if (s.code) return s.code;
+    const k = s.key || 'T';
+    if (/^[a-z]$/i.test(k)) return 'Key' + k.toUpperCase();
+    if (/^[0-9]$/.test(k))  return 'Digit' + k;
+    return null;
+  }
+
   function matchesWriteShortcut(e) {
     const s = settings.writeShortcut || DEFAULT_SHORTCUT;
+    const code = shortcutCode(s);
+    const keyMatches = code
+      ? e.code === code
+      : e.key.toLowerCase() === (s.key || 'T').toLowerCase();
     return e.altKey   === !!s.altKey
         && e.ctrlKey  === !!s.ctrlKey
         && e.shiftKey === !!s.shiftKey
-        && e.key.toLowerCase() === (s.key || 'T').toLowerCase();
+        && keyMatches;
   }
+
+  const readEditorText = editor =>
+    editor.tagName === 'TEXTAREA' ? editor.value : editor.textContent;
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const normalizeText = s => s.replace(/\s+/g, '');
+
+  // compositionstart/end로 IME 조합 여부를 추적 (keydown 시점 + 삽입 직전 재확인용)
+  let imeComposing = false;
+  document.addEventListener('compositionstart', () => { imeComposing = true; }, true);
+  document.addEventListener('compositionend',   () => { imeComposing = false; }, true);
+
+  // IME 조합 중이면 blur로 조합을 확정(compositionend)시킨 뒤 포커스를 복구한다.
+  async function commitComposition(editor, e) {
+    if (!imeComposing && !e?.isComposing && e?.keyCode !== 229) return;
+    const ended = new Promise(resolve => {
+      editor.addEventListener('compositionend', resolve, { once: true });
+      setTimeout(resolve, 100); // compositionend가 안 와도 멈추지 않도록
+    });
+    editor.blur();
+    await ended;
+    editor.focus();
+    await sleep(30); // Lexical 등 에디터가 확정 결과를 반영할 틱
+    imeComposing = false;
+  }
+
+  // 전체 텍스트 치환. execCommand가 IME 상태 등으로 무시되면(선택만 되고 안 바뀜)
+  // 반영 여부를 검증하고 paste 이벤트 → 직접 대입 순으로 재시도한다.
+  async function replaceEditorText(editor, text) {
+    const isTextarea = editor.tagName === 'TEXTAREA';
+    const applied = () => normalizeText(readEditorText(editor)) === normalizeText(text);
+
+    // 삽입 직전에도 조합이 남아 있으면(API 대기 중 재시작 등) 다시 확정
+    await commitComposition(editor);
+
+    editor.focus();
+    document.execCommand('selectAll', false, null);
+    await sleep(0);
+    const inserted = document.execCommand('insertText', false, text);
+    await sleep(50);
+    if (applied()) return true;
+    console.debug('[Glot] insertText 미반영 → 재시도', { inserted, isTextarea });
+
+    editor.focus();
+    if (isTextarea) {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+      setter.call(editor, text);
+      editor.dispatchEvent(new InputEvent('input', { inputType: 'insertText', data: text, bubbles: true }));
+    } else {
+      document.execCommand('selectAll', false, null);
+      await sleep(0);
+      const dt = new DataTransfer();
+      dt.setData('text/plain', text);
+      editor.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    }
+    await sleep(50);
+    return applied();
+  }
+
+  let writeBusy = false;
 
   function setupWriteTranslate() {
     document.addEventListener('keydown', async (e) => {
@@ -406,54 +480,62 @@
       e.preventDefault();
       e.stopPropagation();
 
-      // 텍스트 추출: TEXTAREA는 .value, contenteditable은 textContent (선택 API 우회)
-      // selectAll은 삽입 직전에만 사용
-      let textToTranslate;
-      if (editor.tagName === 'TEXTAREA') {
-        textToTranslate = editor.value.trim();
-      } else {
-        textToTranslate = editor.textContent.trim();
-      }
-      if (!textToTranslate) return;
-
-      // 스피너 (에디터 포커스 유지한 채 위치만 계산)
-      const rect = editor.getBoundingClientRect();
-      setLoadingCursor(rect.left + rect.width / 2, rect.top + rect.height / 2);
-
+      // 한글 조합 중 Alt+T는 keydown이 2번 온다 (IME 229 → 확정 후 정상 't').
+      // 동시에 돌면 서로의 치환을 덮어쓰므로 진행 중이면 무시한다.
+      if (writeBusy) return;
+      writeBusy = true;
       try {
-        const res = await chrome.runtime.sendMessage({
-          type: 'TRANSLATE',
-          text: textToTranslate,
-          targetLanguage: settings.targetLanguage || 'ko',
-        });
-
-        if (res && res.success) {
-          editor.focus();
-          document.execCommand('selectAll', false, null);
-          await new Promise(r => setTimeout(r, 0));
-          const inserted = document.execCommand('insertText', false, res.translation);
-          if (!inserted) {
-            editor.dispatchEvent(new InputEvent('beforeinput', {
-              inputType: 'insertText',
-              data: res.translation,
-              bubbles: true,
-              cancelable: true,
-            }));
-          }
-        } else {
-          const isLimit = res?.error === 'DAILY_LIMIT_REACHED';
-          const msg = isLimit
-            ? '오늘 무료 번역 10회를 모두 사용했습니다. 자정에 초기화됩니다.\n🔑 Glot! 아이콘 → API 키 입력 시 무제한 이용 가능'
-            : res?.error || '번역 실패. 잠시 후 다시 시도하세요.';
-          showToast('glot-write-error', '⚠️ Glot!: ' + msg, isLimit ? 10000 : 5000);
-        }
-      } catch (err) {
-        console.error('[Glot] 역방향 번역 에러:', err);
-        showToast('glot-write-error', '⚠️ Glot!: ' + err.message, 5000);
+        await runWriteTranslate(e, editor);
       } finally {
-        resetCursor();
+        writeBusy = false;
       }
     }, { capture: true });
+  }
+
+  async function runWriteTranslate(e, editor) {
+    // 조합 중인 글자를 확정한 뒤에 읽는다 (마지막 음절 누락/중복 방지)
+    await commitComposition(editor, e);
+
+    // 텍스트 추출: TEXTAREA는 .value, contenteditable은 textContent (선택 API 우회)
+    // selectAll은 삽입 직전에만 사용
+    const originalText = readEditorText(editor);
+    const textToTranslate = originalText.trim();
+    if (!textToTranslate) return;
+
+    // 스피너 (에디터 포커스 유지한 채 위치만 계산)
+    const rect = editor.getBoundingClientRect();
+    setLoadingCursor(rect.left + rect.width / 2, rect.top + rect.height / 2);
+
+    try {
+      const res = await chrome.runtime.sendMessage({
+        type: 'TRANSLATE',
+        text: textToTranslate,
+        targetLanguage: settings.targetLanguage || 'ko',
+      });
+
+      if (res && res.success && res.translation) {
+        const ok = await replaceEditorText(editor, res.translation);
+        if (!ok) {
+          // 끝까지 실패: 비었으면 원문 복원, 아니면 원문이 남아 있으니 그대로 둔다
+          if (!readEditorText(editor).trim()) {
+            document.execCommand('insertText', false, originalText);
+          }
+          console.warn('[Glot] 역방향 번역 삽입 실패 (원문 유지)');
+          showToast('glot-write-error', '⚠️ Glot!: 삽입에 실패해 원문을 유지했습니다.', 5000);
+        }
+      } else {
+        const isLimit = res?.error === 'DAILY_LIMIT_REACHED';
+        const msg = isLimit
+          ? '오늘 무료 번역 10회를 모두 사용했습니다. 자정에 초기화됩니다.\n🔑 Glot! 아이콘 → API 키 입력 시 무제한 이용 가능'
+          : res?.error || '번역 실패. 잠시 후 다시 시도하세요.';
+        showToast('glot-write-error', '⚠️ Glot!: ' + msg, isLimit ? 10000 : 5000);
+      }
+    } catch (err) {
+      console.error('[Glot] 역방향 번역 에러:', err);
+      showToast('glot-write-error', '⚠️ Glot!: ' + err.message, 5000);
+    } finally {
+      resetCursor();
+    }
   }
 
   // ── Auto-close on scroll ──────────────────────────────────────────────────

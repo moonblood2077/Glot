@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Glot!",
   "short_name": "Glot!",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Instantly translate Reddit — click to read, type to write. Powered by Gemini AI.",
   "permissions": ["storage"],
   "host_permissions": [

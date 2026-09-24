@@ -106,13 +106,18 @@ shortcutInput.addEventListener('keydown', e => {
   e.preventDefault();
   // modifier 단독 입력은 무시
   if (['Alt', 'Control', 'Shift', 'Meta'].includes(e.key)) return;
+  if (/^(Alt|Control|Shift|Meta)(Left|Right)$/.test(e.code)) return;
   // Escape → 취소, 이전 값 복원
   if (e.key === 'Escape') {
     shortcutInput.classList.remove('recording');
     updateShortcutDisplay(currentShortcut);
     return;
   }
-  const captured = { altKey: e.altKey, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, key: e.key.toUpperCase() };
+  // 한글 IME 상태에서는 e.key가 'Process'/한글 자모라서 물리 키(e.code)로 표시 문자를 정한다.
+  const label = /^Key[A-Z]$/.test(e.code)  ? e.code.slice(3)
+              : /^Digit\d$/.test(e.code)   ? e.code.slice(5)
+              : e.key.toUpperCase();
+  const captured = { altKey: e.altKey, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, key: label, code: e.code };
   currentShortcut  = captured;
   shortcutChanged  = true;
   shortcutInput.classList.remove('recording');
